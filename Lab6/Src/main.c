@@ -162,7 +162,7 @@ int main(void)
 
   /* Configure the system clock */
   SystemClock_Config();
-	SysTick_Config(HAL_RCC_GetHCLKFreq());
+	//SysTick_Config(HAL_RCC_GetHCLKFreq());
 	sys_init();
 	uint8_t reading = 0;
 			ADC1->CR |= ADC_CR_ADSTART;
