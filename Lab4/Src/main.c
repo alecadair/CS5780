@@ -49,22 +49,26 @@
 void SystemClock_Config(void);
 void Error_Handler(void);
 void transmit_char_toUSART(char c){
-		while((USART2->ISR & USART_ISR_TC) != USART_ISR_TC){
+		while((USART2->ISR & USART_ISR_TXE) == 0){
 			/*insert time out here*/
 		}
-		USART1->ICR |= USART_ICR_TCCF; //clear transmission complete flag
-		USART1->CR1 |= USART_CR1_TCIE; //Enable TC interrupt
+		//USART2->ICR |= USART_ICR_TCCF; //clear transmission complete flag
+		//USART2->CR1 |= USART_CR1_TCIE; //Enable TC interrupt
+		USART2->TDR = c;
+		
 }
 
 void sys_init(){
 	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
 	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
-	GPIOA->MODER = GPIO_MODER_MODER2_1 | GPIO_MODER_MODER3_1;
-	GPIOA->OSPEEDR = GPIO_OSPEEDR_OSPEEDR2 | GPIO_OSPEEDR_OSPEEDR3;
+	GPIOA->MODER |= GPIO_MODER_MODER2_1 | GPIO_MODER_MODER3_1;
+	//GPIOA->MODER |= 
+	//GPIOA->OSPEEDR |= GPIO_OSPEEDR_OSPEEDR2 | GPIO_OSPEEDR_OSPEEDR3;
 	/*select alternate function mode on GPIOA pins 2 & 3*/
-	GPIOA->AFR[0] |= 0x01 << GPIO_AFRL_AFRL2_Pos;
-	GPIOA->AFR[0] |= 0x01 << GPIO_AFRL_AFRL3_Pos;
-	USART2->BRR = (HAL_RCC_GetHCLKFreq()/115200);
+	GPIOA->AFR[0] |= (0x1 << 12);
+	GPIOA->AFR[0] |= (0x1 << 8);
+	USART2->BRR = (HAL_RCC_GetHCLKFreq()/9600);
 	
 	/*enable receiver and transmitter in UART*/
 	USART2->CR1 |= USART_CR1_TE | USART_CR1_RE;
@@ -74,42 +78,29 @@ void sys_init(){
 	//uint32_t clock_freq = HAL_RCC_GetHCLKFreq();
 	//uint32_t baud_rate = clock_freq/9600;
 }
-/* USER CODE BEGIN PFP */
-/* Private function prototypes -----------------------------------------------*/
-
-/* USER CODE END PFP */
-
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
 
 int main(void)
 {
 	/*using USART2 PA2 = TX PA3 = RX*/
-	
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration----------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* Configure the system clock */
   SystemClock_Config();
 	sys_init();
-
-  /* Initialize all configured peripherals */
-
-  /* USER CODE BEGIN 2 */
-
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+	char str[5];
+	str[0] = 'a';
+	str[1] = 'l';
+	str[2] = 'e';
+	str[3] = 'c';
+	str[4] = '\0';
+	int i = 0;
   while (1)
   {
+		
+		transmit_char_toUSART(str[i]);
+		HAL_Delay(10);
+		if(i < 4)
+			i++;
+		else
+			i = 0;
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
