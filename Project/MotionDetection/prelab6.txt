@@ -1,0 +1,25 @@
+Alec Adair - Prelab 6
+
+1. Hysteresis changes the voltage threshold for a digital detection depending on the
+   currently detected digital state. This makes it impossible for a signal to consistently hang
+   around the trigger point and stops unwanted digital switching.
+
+2. Quantizing is converting an analog signal of infinite resolution to a digital signal with
+   finite resolution. The resolution is based on the number of bits being used to descritize
+   the signal.
+
+3. Nyquist theory states that in order to represent a signal by sampling periodically, the
+   sampling rate must be at least twice the frequency of the highest frequency in the signal.
+   When sampling a signal too slowly information in the signal is lost.
+
+4. this gives 2 to the 12 steps
+
+5. Set operating mode, data resolution and trigger source. Start adc calibration. Wait for
+   hardware to signal that calibration has completed.
+
+6. left aligned mode is used for selecting the upper bits of a 16-bit number. right aligned
+   is for selecting the lower bits
+
+7. DAC_CR
+
+8. I did not quite understand the purpose for needing left and right aligned data.
