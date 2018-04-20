@@ -48,75 +48,43 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void Error_Handler(void);
+uint8_t test = 0;
+uint8_t timer_count = 0;
+uint8_t red = 0;
+uint8_t blue = 0;
+uint8_t green = 0;
+uint8_t orange = 0;
+const uint8_t THRESHOLD = 50;// 5s = 100ms * 50 //threshold for lights to begin turning off
+uint16_t last_pulse = 0;
+uint8_t signal_detected = 0;
+
 void sys_init(void){
 	/*Send AHB clock to GPIOC*/
+	HAL_Init();
+
+  /* Configure the system clock */
+  SystemClock_Config();
 	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
 	//RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1,ENABLE);
-	//RCC->APB2ENR |= RCC_APB2ENR_ADCEN;
-	RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
-	//RCC->APB2ENR |= RCC_APB2ENR_ADCEN;
-	//RCC->CR2 |= RCC_CR2_HSI14ON;
-	//RCC->APB2ENR |= RCC_APB2ENR_SYSCFGCOMPEN;
-	/*Configure GPIO LEDs on board*/
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	RCC->APB2ENR |= RCC_APB2ENR_TIM16EN;
 	GPIOC->MODER |= (GPIO_MODER_MODER6_0 | GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0);
 	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEEDR6_0|GPIO_OSPEEDR_OSPEEDR7_0|GPIO_OSPEEDR_OSPEEDR8_0|GPIO_OSPEEDR_OSPEEDR9_0;	
-	
-	//GPIOC->MODER |= GPIO_MODER_MODER4;
-	/*Set PB0 to analog input mode*/
-	//GPIOB->MODER |= GPIO_MODER_MODER1;
-	//GPIOB->PUPDR &= ~GPIO_PUPDR_PUPDR1;
-	/*configure ADC to 8-bit continous conversion mode*/
-	
-	//Configure SYSCFG module to take rising edge interrupt from PC4
-	
-	ADC1->CFGR1 |= ADC_CFGR1_CONT;
-	ADC1->CFGR1 |= ADC_CFGR1_RES_1;
-	//ADC1->CFGR1 &= ~ADC_CFGR1_EXTEN;
-	/*Set ADC channel to 8 which is connected to pin PB0*/
-	ADC1->CHSELR |= ADC_CHSELR_CHSEL14;
-	
-	/*Calibrate ADC*/
-	if((ADC1->CR & ADC_CR_ADEN) != 0){
-		ADC1->CR |= ADC_CR_ADDIS;
-	}
-	while((ADC1->CR & ADC_CR_ADEN) != 0){
-		/*implement a time-out here*/
-	}
-	//ADC1->CFGR1 &= ~ADC_CFGR1_DMAEN;
-	ADC1->CR |= ADC_CR_ADCAL;
-	while((ADC1->CR & ADC_CR_ADCAL) != 0){
-		/*implement a time-out here*/
-	}
-	
-	/*Enable sequence code*/
-	if((ADC1->ISR & ADC_ISR_ADRDY) != 0){
-		ADC1->ISR |= ADC_ISR_ADRDY;
-	}
-	ADC1->CR |= ADC_CR_ADEN;
-	while((ADC1->ISR & ADC_ISR_ADRDY) == 0){
-		/*implement a time out here*/
-	}
-	
-	//ADC1->CR |= ADC_CR_ADCAL;
-	//while(!ADC1->CR & ADC_CR_ADCAL); //should have a time out incase ADC does not work.
-	
-	//if((ADC1->ISR & ADC_ISR_ADRDY) != 0){
-	//	ADC1->ISR |= ADC_ISR_ADRDY;
-	//}
-	/*Turn the ADC on*/
-	//ADC1->CR |= ADC_CR_ADEN;
-	//while((ADC1->ISR & ADC_ISR_ADRDY) == 0);
-
-
-	/*Make sure that no pull up/down resistors are enabled on GPIOB0*/
-	//GPIOB->PUPDR &= ~GPIO_PUPDR_PUPDR0_Msk;
-		/*Enable apb bus clock for ADC*/
-	//RCC->APB2ENR |= RCC_APB2ENR_ADCEN;
-
-
-
-	//ADC1->CR |= ADC_CR_ADSTART;
-
+	GPIOA->PUPDR |= GPIO_PUPDR_PUPDR0_1;					//enable pull down resistor
+	SYSCFG->EXTICR[0] |= SYSCFG_EXTICR1_EXTI0_PA;	//configure multiplexing 
+	EXTI->RTSR |= EXTI_RTSR_TR0;	//set interrupt to rising edge
+	EXTI->IMR |= EXTI_IMR_MR0;		//set line pa0 to interrupt capable
+	//set timer interrupt for every 100ms
+	TIM16->PSC = 1025;
+	TIM16->ARR = 782;
+	TIM16->CR1 = TIM_CR1_CEN;//enable timer
+	TIM16->DIER = TIM_CR1_CEN;
+	//EXTI->PR |= EXTI_PR_PR0 ;
+	NVIC_SetPriority(EXTI0_1_IRQn,1);
+	NVIC_EnableIRQ(EXTI0_1_IRQn);
+	NVIC_SetPriority(TIM16_IRQn,2);
+	NVIC_EnableIRQ(TIM16_IRQn);
+	RCC->APB2ENR |= RCC_APB2ENR_SYSCFGCOMPEN;
 	
 }
 
@@ -162,14 +130,67 @@ void turn_off_red_LED(){
 
 int main(void)
 {
-  HAL_Init();
-
-  /* Configure the system clock */
-  SystemClock_Config();
 	//SysTick_Config(HAL_RCC_GetHCLKFreq());
 	sys_init();
+	while(1)
+		__WFI();
 }
 
+//void EXTI1_4_IRQHandler(void){
+//	int i = 1;
+//	i += 1;
+	
+//	return;
+//}
+void TIM16_IRQHandler(void){
+	if(TIM16->SR & TIM_SR_UIF)
+		TIM16->SR &= ~TIM_SR_UIF;
+	timer_count++;
+	if(timer_count == 30 && signal_detected)
+		turn_off_green_LED();
+	if(timer_count == 40 && signal_detected)
+		turn_off_blue_LED();
+	if(timer_count == 50 && signal_detected)
+		turn_off_orange_LED();
+	if(timer_count == 60 && signal_detected){
+		turn_off_red_LED();
+		signal_detected = 0;
+		timer_count = 0;
+	}
+
+	
+
+/*	if(timer_count < 10){
+		timer_count++;
+	}else{
+		timer_count = 0;
+		if(test){
+			turn_on_red_LED();
+			test = 0;
+		}else{
+			turn_off_red_LED();
+			test = 1;
+		}
+	}*/\
+}
+
+void EXTI0_1_IRQHandler(void){
+	while(GPIOA->IDR & 0x1){
+		turn_on_red_LED();
+		turn_on_blue_LED();
+		turn_on_green_LED();
+		turn_on_orange_LED();
+	}
+//	turn_off_red_LED();
+//	turn_off_blue_LED();
+//	turn_off_green_LED();
+//	turn_off_orange_LED();
+	last_pulse = 0;
+	timer_count = 0;
+	signal_detected = 1;
+  EXTI->PR |= EXTI_PR_PR0 ;
+
+}
 /** System Clock Configuration
 */
 void SystemClock_Config(void)
