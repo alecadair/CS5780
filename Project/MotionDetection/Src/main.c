@@ -4,29 +4,6 @@
   * Description        : Main program body
   ******************************************************************************
   *
-  * COPYRIGHT(c) 2017 STMicroelectronics
-  *
-  * Redistribution and use in source and binary forms, with or without modification,
-  * are permitted provided that the following conditions are met:
-  *   1. Redistributions of source code must retain the above copyright notice,
-  *      this list of conditions and the following disclaimer.
-  *   2. Redistributions in binary form must reproduce the above copyright notice,
-  *      this list of conditions and the following disclaimer in the documentation
-  *      and/or other materials provided with the distribution.
-  *   3. Neither the name of STMicroelectronics nor the names of its contributors
-  *      may be used to endorse or promote products derived from this software
-  *      without specific prior written permission.
-  *
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-  * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-  * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-  * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   *
   ******************************************************************************
   */
@@ -34,18 +11,9 @@
 #include "main.h"
 #include "stm32f0xx_hal.h"
 
-/* USER CODE BEGIN Includes */
+#define MEASURE 0
+#define LAST_PULSE 1
 
-/* USER CODE END Includes */
-
-/* Private variables ---------------------------------------------------------*/
-
-/* USER CODE BEGIN PV */
-/* Private variables ---------------------------------------------------------*/
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void Error_Handler(void);
 uint8_t test = 0;
@@ -54,9 +22,25 @@ uint8_t red = 0;
 uint8_t blue = 0;
 uint8_t green = 0;
 uint8_t orange = 0;
-const uint8_t THRESHOLD = 50;// 5s = 100ms * 50 //threshold for lights to begin turning off
-uint16_t last_pulse = 0;
+const uint8_t THRESHOLD = 10;// 1s = 100ms * 50 //threshold for lights to begin turning off
+uint16_t pulse_time = 0;
 uint8_t signal_detected = 0;
+void transmit_char_toUSART(char c);
+void transmit_string(char* word);
+void process_last_pulse();
+void process_measure();
+void process_command();
+const uint16_t MSG_SIZE = 1024;
+
+char last_command[MSG_SIZE];
+	
+uint16_t command_len = 0;
+
+/*Control UART messages*/
+char measure[MSG_SIZE] = "measure\n";
+char last_pulse[MSG_SIZE] = "last_pulse\n";
+
+char* commands[2] = {measure, last_pulse};
 
 void sys_init(void){
 	/*Send AHB clock to GPIOC*/
@@ -65,9 +49,26 @@ void sys_init(void){
   /* Configure the system clock */
   SystemClock_Config();
 	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+	RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
 	//RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1,ENABLE);
 	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
 	RCC->APB2ENR |= RCC_APB2ENR_TIM16EN;
+	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+	//configure GPIO for UART
+	GPIOA->AFR[0] |= 0x1 << 12;
+	GPIOA->AFR[0] |= 0x1 << 8;//select alternate function 1 for pa2 and pa3
+	GPIOB->MODER |= GPIO_MODER_MODER6_1 | GPIO_MODER_MODER7_1;
+	GPIOB->OTYPER |= GPIO_OTYPER_OT_6;
+	GPIOB->PUPDR |= GPIO_PUPDR_PUPDR6_0;
+	
+	USART1->BRR |= (HAL_RCC_GetHCLKFreq()/9600);
+	USART1->CR1 |= USART_CR1_TE | USART_CR1_RE;
+	USART1->CR1 |= USART_CR1_RXNEIE;
+	
+	USART2->BRR = HAL_RCC_GetHCLKFreq()/9600;
+	
+	
 	GPIOC->MODER |= (GPIO_MODER_MODER6_0 | GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0);
 	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEEDR6_0|GPIO_OSPEEDR_OSPEEDR7_0|GPIO_OSPEEDR_OSPEEDR8_0|GPIO_OSPEEDR_OSPEEDR9_0;	
 	GPIOA->PUPDR |= GPIO_PUPDR_PUPDR0_1;					//enable pull down resistor
@@ -80,22 +81,53 @@ void sys_init(void){
 	TIM16->CR1 = TIM_CR1_CEN;//enable timer
 	TIM16->DIER = TIM_CR1_CEN;
 	//EXTI->PR |= EXTI_PR_PR0 ;
-	NVIC_SetPriority(EXTI0_1_IRQn,1);
+	NVIC_SetPriority(EXTI0_1_IRQn,2);
 	NVIC_EnableIRQ(EXTI0_1_IRQn);
-	NVIC_SetPriority(TIM16_IRQn,2);
+	NVIC_SetPriority(TIM16_IRQn,3);
 	NVIC_EnableIRQ(TIM16_IRQn);
+	NVIC_EnableIRQ(USART1_IRQn);
+	NVIC_SetPriority(USART1_IRQn, 1);	
+	/*enable receiver and transmitter in UART*/
+	USART2->CR1 |= USART_CR1_TE | USART_CR1_RE;
+	/*enable the USART*/
+	USART2->CR1 |= USART_CR1_UE;
+	USART1->CR1 |= USART_CR1_UE;
 	RCC->APB2ENR |= RCC_APB2ENR_SYSCFGCOMPEN;
 	
 }
+void transmit_char_toUSART(char c){
+		while((USART1->ISR & USART_ISR_TXE) == 0){
+			/*insert time out here*/
+		}
+		//USART2->ICR |= USART_ICR_TCCF; //clear transmission complete flag
+		//USART2->CR1 |= USART_CR1_TCIE; //Enable TC interrupt
+		USART1->TDR = (char)c;
+}
+void transmit_string(char* word){
+	uint16_t i = 0;
+	for(; word[i] != '\0'; i++){
+		transmit_char_toUSART(word[i]);
+	}
+	return;
+}
 
-/* USER CODE BEGIN PFP */
-/* Private function prototypes -----------------------------------------------*/
+uint8_t strings_equal(volatile char s1[MSG_SIZE], volatile char s2[MSG_SIZE]){
+	uint16_t i = 0;
+	for(;i < MSG_SIZE; i++){
+		if(s1[i] != s2[i])
+			return 0;
+	}
+	return 1;
+}
 
-/* USER CODE END PFP */
+void process_last_pulse(){
+	
+}
 
-/* USER CODE BEGIN 0 */
+void process_measure(){
+	
+}
 
-/* USER CODE END 0 */
 void turn_on_red_LED(){
 	GPIOC->BSRR |= GPIO_BSRR_BS_6;
 }
@@ -128,6 +160,10 @@ void turn_off_red_LED(){
 	GPIOC->BSRR |= GPIO_BSRR_BR_6;
 }
 
+void process_command(){
+	return;
+}
+
 int main(void)
 {
 	//SysTick_Config(HAL_RCC_GetHCLKFreq());
@@ -135,57 +171,55 @@ int main(void)
 	while(1)
 		__WFI();
 }
-
-//void EXTI1_4_IRQHandler(void){
-//	int i = 1;
-//	i += 1;
-	
-//	return;
-//}
+void USART1_IRQHandler(void){
+	char data = 0;
+	if(USART1->ISR & USART_ISR_RXNE){
+		USART1-> RQR |= USART_RQR_RXFRQ;
+		data = USART1->RDR;
+		transmit_char_toUSART(data);
+		if(data == '\r')
+			last_command[command_len] = '\n';
+		else
+			last_command[command_len] = data;
+		command_len++;
+		if(data == '\r'){
+			process_command();
+			for(uint16_t i = 0; i < MSG_SIZE; i++){
+				last_command[i] = 0;
+			}
+			command_len = 0;
+		}
+	}
+	return;
+}
 void TIM16_IRQHandler(void){
 	if(TIM16->SR & TIM_SR_UIF)
 		TIM16->SR &= ~TIM_SR_UIF;
 	timer_count++;
-	if(timer_count == 30 && signal_detected)
+	if(timer_count == 2*THRESHOLD && signal_detected)
 		turn_off_green_LED();
-	if(timer_count == 40 && signal_detected)
+	if(timer_count == 3*THRESHOLD && signal_detected)
 		turn_off_blue_LED();
-	if(timer_count == 50 && signal_detected)
+	if(timer_count == 4*THRESHOLD && signal_detected)
 		turn_off_orange_LED();
-	if(timer_count == 60 && signal_detected){
+	if(timer_count == 5*THRESHOLD && signal_detected){
 		turn_off_red_LED();
 		signal_detected = 0;
 		timer_count = 0;
 	}
-
-	
-
-/*	if(timer_count < 10){
-		timer_count++;
-	}else{
-		timer_count = 0;
-		if(test){
-			turn_on_red_LED();
-			test = 0;
-		}else{
-			turn_off_red_LED();
-			test = 1;
-		}
-	}*/\
 }
 
 void EXTI0_1_IRQHandler(void){
+	char* msg = "Motion Detected\n\0";
+	
+	transmit_string(msg);
 	while(GPIOA->IDR & 0x1){
 		turn_on_red_LED();
 		turn_on_blue_LED();
 		turn_on_green_LED();
 		turn_on_orange_LED();
 	}
-//	turn_off_red_LED();
-//	turn_off_blue_LED();
-//	turn_off_green_LED();
-//	turn_off_orange_LED();
-	last_pulse = 0;
+	pulse_time = 0;
 	timer_count = 0;
 	signal_detected = 1;
   EXTI->PR |= EXTI_PR_PR0 ;
